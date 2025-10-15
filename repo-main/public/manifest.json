@@ -1,0 +1,30 @@
+{
+  "key": "integration.paypal-reporter",
+  "name": "PayPal Report Link",
+  "description": "Generates PDF reports from Clockify time entries with a PayPal.me link.",
+  "baseUrl": "https://repo-three-eosin.vercel.app",
+  "minimalSubscriptionPlan": "FREE",
+  "lifecycle": [
+    {
+      "type": "INSTALLED",
+      "path": "/api/lifecycle/installed"
+    }
+  ],
+  "components": [
+    {
+      "type": "sidebar",
+      "label": "PayPal Reports",
+      "path": "/",
+      "accessLevel": "ADMINS"
+    }
+  ],
+  "scopes": [
+    "WORKSPACE_READ",
+    "CLIENT_READ",
+    "PROJECT_READ",
+    "TASK_READ",
+    "TIME_ENTRY_READ",
+    "USER_READ",
+    "REPORTS_READ"
+  ]
+}
