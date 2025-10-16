@@ -22,10 +22,12 @@ function encrypt(text) {
 }
 
 export default async function handler(req, res) {
+    console.log("running")
     if (req.method.toUpperCase() !== 'POST') {
         res.setHeader('Allow', ['POST']);
         return res.status(405).end('Method Not Allowed');
     }
+    console.log("running 2")
 
     try {
         const { workspaceId, authToken } = req.body;
