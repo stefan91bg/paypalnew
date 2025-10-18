@@ -2,15 +2,9 @@ import jwt from 'jsonwebtoken';
 
 // Javni ključ iz Clockify dokumentacije za verifikaciju tokena
 const CLOCKIFY_PUBLIC_KEY = 
-    "-----BEGIN PUBLIC KEY-----\n" +
-    "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAubktufFNO/op+E5WBWL6\n" +
-    "/Y9QRZGSGGCsV00FmPRl5A0mSfQu3yq2Yaq47IlN0zgFy9IUG8/JJfwiehsmbrKa\n" +
-    "49t/xSkpG1u9w1GUyY0g4eKDUwofHKAt3IPw0St4qsWLK9mO+koUo56CGQOEpTui\n" +
-    "5bMfmefVBBfShXTaZOtXPB349FdzSuYlU/5o3L12zVWMutNhiJCKyGfsuu2uXa9+\n" +
-    "6uQnZBw1wO3/QEci7i4TbC+ZXqW1rCcbogSMORqHAP6qSAcTFRmrjFAEsOWiUUhZ\n" +
-    "rLDg2QJ8VTDghFnUhYklNTJlGgfo80qRWe1NLIwvZj0h3bWRfrqZHsD/Yjh0duk6\n" +
-    "yQIDAQAB\n" +
-    "-----END PUBLIC KEY-----"; 
+    "-----BEGIN PUBLIC KEY-----
+MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAubktufFNO/op+E5WBWL6/Y9QRZGSGGCsV00FmPRl5A0mSfQu3yq2Yaq47IlN0zgFy9IUG8/JJfwiehsmbrKa49t/xSkpG1u9w1GUyY0g4eKDUwofHKAt3IPw0St4qsWLK9mO+koUo56CGQOEpTui5bMfmefVBBfShXTaZOtXPB349FdzSuYlU/5o3L12zVWMutNhiJCKyGfsuu2uXa9+6uQnZBw1wO3/QEci7i4TbC+ZXqW1rCcbogSMORqHAP6qSAcTFRmrjFAEsOWiUUhZrLDg2QJ8VTDghFnUhYklNTJlGgfo80qEWe1NLIwvZj0h3bWRfrqZHsD/Yjh0duk6yQIDAQAB
+-----END PUBLIC KEY-----"; 
 
 // ... rest of the file ...
 
