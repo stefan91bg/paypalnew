@@ -1,4 +1,4 @@
-// report-view.js with "click outside" functionality added to dropdowns
+// repo-main/pages/report-view.js
 
 "use client";
 
@@ -32,7 +32,8 @@ document.removeEventListener("mousedown", handleClickOutside);
 };
 }, [dropdownRef]); // Zavisnost je ref, tako da se ovo izvršava samo jednom
 
-useEffect(() => { if(withoutOptionState) onChange([]) }, [withoutOptionState]);
+useEffect(() => { if(selectedTasks.length > 0) setWithoutTask(false) }, [selectedTasks]);
+useEffect(() => { if(withoutDescription) setDescriptionFilter('') }, [withoutDescription]);
 
 const filteredOptions = useMemo(() => options.filter(([id, name]) => name.toLowerCase().includes(searchTerm.toLowerCase())), [options, searchTerm]);
 const handleSelectAll = () => { onWithoutOptionChange(false); if (selectedOptions.length === options.length) { onChange([]); } else { onChange(options.map(([id]) => id)); } };
@@ -197,25 +198,36 @@ finally { setIsApplyingFilters(false); }
 const handleDownload = async () => {
 setIsDownloading(true);
 try {
-const billableFilterValue = status === "billable" ? "billable" : "billable_and_nonbillable";
-const resp = await fetch("/api/reports", {
-method: "POST",
-headers: { "Content-Type": "application/json", "Authorization": `Bearer ${auth_token}` },
-body: JSON.stringify({
-start, end, billableFilter: billableFilterValue, projectFilter: selectedProjects,
-clientFilter: clientId, clientName, clientAddress, taskFilter: selectedTasks,
-descriptionFilter: descriptionFilter,
-withoutTask: withoutTask,
-withoutDescription: withoutDescription,
-USER_PAYPAL_LINK: paypal,
-issueDate, dueDate, preview: false, columns: pdfColumns
-}),
-});
-if (!resp.ok) throw new Error("Failed to generate PDF on the server.");
-const blob = await resp.blob();
-const url = window.URL.createObjectURL(blob);
-const a = document.createElement("a"); a.href = url; a.download = `report-${start}-to-${end}.pdf`; document.body.appendChild(a); a.click(); window.URL.revokeObjectURL(url); a.remove();
-} catch (err) { setError("Could not generate PDF. Please try again."); }
+    const billableFilterValue = status === "billable" ? "billable" : "billable_and_nonbillable";
+    const resp = await fetch("/api/reports", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${auth_token}` },
+        body: JSON.stringify({
+            start, end, billableFilter: billableFilterValue, projectFilter: selectedProjects,
+            clientFilter: clientId, clientName, clientAddress, taskFilter: selectedTasks,
+            descriptionFilter: descriptionFilter,
+            withoutTask: withoutTask,
+            withoutDescription: withoutDescription,
+            USER_PAYPAL_LINK: paypal,
+            issueDate, dueDate, preview: false, columns: pdfColumns
+        }),
+    });
+    
+    // ✨ PROVERA 403 (LIMIT)
+    if (resp.status === 403) {
+        const errorData = await resp.json();
+        alert(errorData.message || "You hit the download limit. Please subscribe to continue.");
+        return; // Prekini funkciju
+    }
+
+    if (!resp.ok) {
+        throw new Error("Failed to generate PDF on the server.");
+    }
+    
+    const blob = await resp.blob();
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement("a"); a.href = url; a.download = `report-${start}-to-${end}.pdf`; document.body.appendChild(a); a.click(); window.URL.revokeObjectURL(url); a.remove();
+} catch (err) { setError(err.message || "Could not generate PDF. Please try again."); }
 finally { setIsDownloading(false); }
 };
 
