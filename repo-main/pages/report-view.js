@@ -92,6 +92,7 @@ const MultiSelectDropdown = ({ label, options, selectedOptions, onChange, showWi
     );
 };
 
+
 export default function ReportView() {
     const router = useRouter();
     const [allEntriesForClient, setAllEntriesForClient] = useState([]);
@@ -108,10 +109,7 @@ export default function ReportView() {
     const [isApplyingFilters, setIsApplyingFilters] = useState(false);
     const [isDownloading, setIsDownloading] = useState(false);
     const [pdfColumns, setPdfColumns] = useState({ date: true, description: true, project: true, task: true });
-    
-    // ✨ NOVO: State promenljiva za praćenje limita
     const [isLimitReached, setIsLimitReached] = useState(false);
-
     const { start, end, status, paypal, clientId, clientName, clientAddress, issueDate, dueDate, auth_token } = router.query;
 
     useEffect(() => { if (selectedTasks.length > 0) setWithoutTask(false) }, [selectedTasks]);
@@ -210,17 +208,17 @@ export default function ReportView() {
                     issueDate, dueDate, preview: false, columns: pdfColumns
                 }),
             });
-            
-            // ✨ AŽURIRANA LOGIKA: Postavljamo state i prikazujemo alert
+
             if (resp.status === 403) {
                 const errorData = await resp.json();
-                setIsLimitReached(true); // Onemogućavamo dugme
-                alert("You hit 3 PDF downloads limit, please subscribe to the payed version.");
+                setIsLimitReached(true);
+                alert(errorData.message || "You hit 3 PDF downloads limit, please subscribe to the payed version.");
                 return;
             }
 
             if (!resp.ok) {
-                throw new Error("Failed to generate PDF on the server.");
+                const errorText = await resp.text();
+                throw new Error(errorText || "Failed to generate PDF on the server.");
             }
             
             const blob = await resp.blob();
@@ -268,25 +266,61 @@ export default function ReportView() {
             </div>
 
             <div className="filters-wrapper">
-                {/* ... filteri ostaju isti ... */}
+                <div className="filters-grid">
+                    <MultiSelectDropdown label="Projects" options={uniqueProjects} selectedOptions={selectedProjects} onChange={setSelectedProjects} />
+                    <MultiSelectDropdown label="Tasks" options={uniqueTasks} selectedOptions={selectedTasks} onChange={setSelectedTasks} showWithoutOption={true} withoutOptionState={withoutTask} onWithoutOptionChange={setWithoutTask} />
+
+                    <div>
+                        <div className="relative w-60">
+                            <input
+                                type="text" id="description_filter" name="description_filter"
+                                className="w-full rounded-md border-gray-300 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm py-2 pl-9 pr-3 disabled:bg-gray-100"
+                                placeholder="Enter description..."
+                                value={descriptionFilter}
+                                onChange={(e) => { setWithoutDescription(false); setDescriptionFilter(e.target.value); }}
+                                disabled={withoutDescription}
+                            />
+                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                                <svg className="h-5 w-5 text-gray-400" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor" aria-hidden="true">
+                                    <path fillRule="evenodd" d="M9 3.5a5.5 5.5 0 100 11 5.5 5.5 0 000-11zM2 9a7 7 0 1112.452 4.391l3.323 3.322a.75.75 0 11-1.06 1.06l-3.322-3.323A7 7 0 012 9z" clipRule="evenodd" />
+                                </svg>
+                            </div>
+                        </div>
+                        <div className="flex items-center mt-2">
+                            <input type="checkbox" id="without_description" name="without_description" checked={withoutDescription} onChange={(e) => setWithoutDescription(e.target.checked)} className="h-4 w-4 rounded border-gray-300 text-indigo-600"/>
+                            <label htmlFor="without_description" className="ml-2 text-sm text-gray-600">Without description</label>
+                        </div>
+                    </div>
+                </div>
+                <div className="filter-actions">
+                    <button className="apply-btn" onClick={handleApplyFilters} disabled={isApplyingFilters}> {isApplyingFilters ? 'Applying...' : 'Apply Filters'} </button>
+                    <button onClick={handleClearFilters} className="clear-link"> Clear filters </button>
+                </div>
             </div>
 
             <div className="table-wrapper">
-                {/* ... tabela ostaje ista ... */}
+                {filteredEntries.length === 0 ? (<p className="no-entries">No time entries found for the selected criteria.</p>) : (
+                <table className="report-table">
+                    <thead><tr><th>Date</th><th>Description</th><th>Project</th><th>Task</th><th>Hourly Rate</th><th>Amount</th><th>Duration</th></tr></thead>
+                    <tbody>{filteredEntries.map((e, i) => (<tr key={i}><td>{e.date}</td><td>{e.description}</td><td>{e.project}</td><td>{e.task}</td><td>{e.hourlyRate}</td><td>{e.amountDisplay}</td><td>{e.duration}</td></tr>))}</tbody>
+                </table>
+                )}
             </div>
-
             <div className="pdf-options-wrapper">
-                {/* ... PDF opcije ostaju iste ... */}
+                <h3 className="pdf-options-title">Show in PDF</h3>
+                <div className="pdf-options-grid">
+                    <label className="pdf-option-item"><input type="checkbox" name="date" checked={pdfColumns.date} onChange={handlePdfColumnChange} /><span>Date</span></label>
+                    <label className="pdf-option-item"><input type="checkbox" name="description" checked={pdfColumns.description} onChange={handlePdfColumnChange} /><span>Description</span></label>
+                    <label className="pdf-option-item"><input type="checkbox" name="project" checked={pdfColumns.project} onChange={handlePdfColumnChange} /><span>Project</span></label>
+                    <label className="pdf-option-item"><input type="checkbox" name="task" checked={pdfColumns.task} onChange={handlePdfColumnChange} /><span>Task</span></label>
+                </div>
             </div>
-            
             <div className="actions">
                 <button className="back-btn" onClick={() => router.back()}>← Go Back</button>
-                
-                {/* ✨ AŽURIRANO DUGME I PORUKA */}
                 <div className="download-container">
-                    <button 
-                        className="download-btn" 
-                        onClick={handleDownload} 
+                    <button
+                        className="download-btn"
+                        onClick={handleDownload}
                         disabled={isDownloading || isLimitReached}
                     >
                         {isDownloading ? 'Generating...' : (isLimitReached ? 'Limit Reached' : 'Download PDF with PayPal Link')}
@@ -297,13 +331,39 @@ export default function ReportView() {
                         </p>
                     )}
                 </div>
-
             </div>
         </div>
 
         <style jsx global>{` body { background-color: #f4f5f7; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; color: #172b4d; } `}</style>
         <style jsx>{`
-            /* ... svi ostali stilovi ostaju isti ... */
+            .container { display: flex; justify-content: center; align-items: flex-start; min-height: 100vh; padding: 48px 24px; }
+            .report-card { background: #ffffff; border-radius: 12px; padding: 32px 40px; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1); width: 100%; max-width: 1200px; border: 1px solid #dfe1e6; }
+            .title { font-size: 28px; font-weight: 700; text-align: center; margin: 0 0 5px; color: #172b4d; }
+            .subtitle { font-size: 15px; text-align: center; color: #6b778c; margin-bottom: 32px; }
+            .totals-card { display: flex; justify-content: space-around; background-color: #f4f5f7; border-radius: 10px; padding: 20px; margin-bottom: 32px; text-align: center; }
+            .totals-label { display: block; color: #6b778c; font-size: 14px; margin-bottom: 5px; }
+            .totals-value { display: block; color: #172b4d; font-size: 18px; font-weight: 600; }
+            .filters-wrapper { display: flex; align-items: flex-start; flex-wrap: nowrap; gap: 24px; margin-bottom: 24px; padding-bottom: 24px; border-bottom: 1px solid #dfe1e6; }
+            .filters-grid { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-start; flex-grow: 1; }
+            .filter-actions { display: flex; align-items: center; gap: 16px; }
+            .apply-btn { background-color: #3b82f6; color: white; font-weight: 600; padding: 8px 16px; border-radius: 6px; transition: background-color 0.2s; height: 40px; }
+            .apply-btn:hover { background-color: #2563eb; }
+            .apply-btn:disabled { background-color: #93c5fd; cursor: not-allowed; }
+            .clear-link { color: #6b7280; font-weight: 500; font-size: 14px; cursor: pointer; }
+            .clear-link:hover { text-decoration: underline; }
+            .table-wrapper { overflow-x: auto; margin-bottom: 30px; }
+            .report-table { width: 100%; border-collapse: collapse; min-width: 900px; }
+            th, td { padding: 12px 15px; text-align: left; vertical-align: top; font-size: 14px; }
+            thead tr { background-color: #f4f5f7; border-bottom: 2px solid #dfe1e6; }
+            th { font-weight: 600; color: #42526e; }
+            tbody tr { border-bottom: 1px solid #dfe1e6; }
+            tbody tr:last-child { border-bottom: none; }
+            tbody tr:hover { background-color: #f9fafb; }
+            .pdf-options-wrapper { margin-top: 20px; padding-top: 20px; border-top: 1px solid #dfe1e6; }
+            .pdf-options-title { font-size: 16px; font-weight: 600; color: #42526e; margin: 0 0 12px 0; }
+            .pdf-options-grid { display: flex; flex-wrap: wrap; gap: 24px; }
+            .pdf-option-item { display: flex; align-items: center; font-size: 14px; cursor: pointer; }
+            .pdf-option-item input { margin-right: 8px; width: 16px; height: 16px; cursor: pointer; }
             .actions { display: flex; justify-content: space-between; align-items: center; margin-top: 20px; padding-top: 20px; border-top: 1px solid #dfe1e6; }
             .back-btn, .download-btn { border: none; padding: 12px 24px; border-radius: 8px; cursor: pointer; font-weight: 600; font-size: 15px; transition: all 0.2s; }
             .back-btn { background-color: #e5e7eb; color: #333; }
@@ -311,8 +371,10 @@ export default function ReportView() {
             .download-btn { background-color: #0052cc; color: #fff; }
             .download-btn:hover { background-color: #0065ff; }
             .download-btn:disabled { background: #a5adba; cursor: not-allowed; }
-            
-            /* ✨ NOVI STILOVI ZA PORUKU O LIMITU */
+            .loading-container, .error-box, .no-entries { text-align: center; font-size: 18px; padding: 50px 20px; color: #6b778c; }
+            .error-box { color: #de350b; background-color: #ffebe6; border: 1px solid #ffbdad; border-radius: 10px; }
+            .spinner { margin: 0 auto 20px; border: 4px solid #dfe1e6; border-top: 4px solid #0052cc; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; }
+            @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
             .download-container { text-align: right; }
             .limit-message { color: #de350b; font-size: 14px; margin-top: 8px; }
         `}</style>
