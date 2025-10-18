@@ -22,7 +22,9 @@ export default async function handler(req, res) {
     
     const url = `${backendUrl}/v1/workspaces/${workspaceId}/clients?archived=false&page-size=1000&sort-column=NAME&sort-order=ASCENDING`;
     
-    const response = await fetch(url, { headers: { 'X-Addon-Token': token }, // Koristimo token za komunikaciju sa Clockify-em });
+    const response = await fetch(url, {
+      headers: { 'X-Addon-Token': token }, // Koristimo token za komunikaciju sa Clockify-em
+    });
 
     if (!response.ok) {
       throw new Error(`Clockify API error: ${response.statusText}`);
