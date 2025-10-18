@@ -34,7 +34,7 @@ export default async function handler(req, res) {
         const { workspaceId, reportsUrl, backendUrl } = decodedToken;
         
         // =======================================================
-        // LOGIKA ZA PROVERU FREE TRIAL LIMITE (3)
+        // ✨ FINALNA LOGIKA ZA PROVERU I BROJANJE FREE TRIAL LIMITE
         // =======================================================
         const { preview } = req.body;
         
@@ -49,7 +49,6 @@ export default async function handler(req, res) {
                 .single();
 
             if (fetchError || !installation) {
-                // Ako instalacija nije pronađena (ili je SELECT pucao)
                 console.error(`Installation not found in DB for workspace: ${workspaceId}. Fetch Error:`, fetchError?.message || 'N/A');
                 return res.status(500).json({ error: 'Addon installation record missing or DB fetch failed.' });
             }
@@ -58,28 +57,24 @@ export default async function handler(req, res) {
 
             // 2. Provera da li je limit dostignut
             if (currentCount >= DOWNLOAD_LIMIT) {
-                // Vraćamo 403 Forbidden status
                 return res.status(403).json({ 
                     error: 'Trial limit reached', 
                     message: `You hit the limit of ${DOWNLOAD_LIMIT} PDF downloads. Subscribe to the paid version to continue.` 
                 });
             }
 
-            // 3. Povećanje brojača za 1 pre generisanja PDF-a (PRIVREMENO KOMENTARISANO)
-            /*
-            const { error: updateError } = await supabase
-                .from('installations')
-                .update({ pdf_downloads_count: currentCount + 1 })
-                .eq('workspace_id', workspaceId);
+            // 3. Povećanje brojača pozivanjem RPC funkcije
+            const { error: rpcError } = await supabase.rpc('increment_pdf_download_count', {
+                p_workspace_id: workspaceId
+            });
 
-            if (updateError) {
-                console.error(`Failed to update download count for workspace ${workspaceId}:`, updateError);
+            if (rpcError) {
+                console.error(`Failed to increment download count for workspace ${workspaceId}:`, rpcError);
                 return res.status(500).json({ error: 'Database update failed. Cannot complete download.' });
             }
-            */
         }
         // =======================================================
-        // KRAJ LOGIKE ZA LIMIT
+        // ✨ KRAJ LOGIKE ZA LIMIT
         // =======================================================
         
         const { start, end, USER_PAYPAL_LINK, billableFilter, projectFilter, clientFilter, clientName, clientAddress, taskFilter, descriptionFilter, withoutTask, withoutDescription, issueDate, dueDate, columns: visibleColumns = { date: true, description: true, project: true, task: true } } = req.body;
