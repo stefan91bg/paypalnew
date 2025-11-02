@@ -1,47 +1,67 @@
 import jwt from 'jsonwebtoken';
+import jwksClient from 'jwks-rsa';
 
-// Javni ključ iz Clockify dokumentacije za verifikaciju tokena
-const CLOCKIFY_PUBLIC_KEY = `-----BEGIN PUBLIC KEY-----
-MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAubktufFNO/op+E5WBWL6
-/Y9QRZGSGGCsV00FmPRl5A0mSfQu3yq2Yaq47IlN0zgFy9IUG8/JJfwiehsmbrKa
-49t/xSkpG1u9w1GUyY0g4eKDUwofHKAt3IPw0St4qsWLK9mO+koUo56CGQOEpTui
-5bMfmefVBBfShXTaZOtXPB349FdzSuYlU/5o3L12zVWMutNhiJCKyGfsuu2uXa9+
-6uQnZBw1wO3/QEci7i4TbC+ZXqW1rCcbogSMORqHAP6qSAcTFRmrjFAEsOWiUUhZ
-rLDg2QJ8VTDghFnUhYklNTJlGgfo80qEWe1NLIwvZj0h3bWRfrqZHsD/Yjh0duk6
-yQIDAQAB
------END PUBLIC KEY-----`;// ... rest of the file ...
+// 1. Definišemo JWKS klijent koji zna gde da traži Clockify ključeve
+const client = jwksClient({
+  jwksUri: 'https://marketplace.api.cake.com/.well-known/jwks.json',
+  cache: true, // Omogućava keširanje ključeva da ne bi slao zahtev svaki put
+  rateLimit: true, // Sprečava previše zahteva
+});
 
 /**
- * Verifikuje JWT token dobijen od Clockify-a
+ * Dinamički pronalazi ispravan ključ za potpisivanje sa Clockify servera.
+ * Ovu funkciju koristi jwt.verify.
+ */
+function getKey(header, callback) {
+  if (!header.kid) {
+    return callback(new Error('Token is missing kid (Key ID) in header.'));
+  }
+
+  // client.getSigningKey pronalazi ključ u JWKS listi na osnovu 'kid' iz tokena
+  client.getSigningKey(header.kid, (err, key) => {
+    if (err) {
+      console.error('Failed to get signing key:', err);
+      return callback(err);
+    }
+    const signingKey = key.getPublicKey();
+    callback(null, signingKey);
+  });
+}
+
+/**
+ * Verifikuje JWT token dobijen od Clockify-a koristeći dinamički JWKS
  * @param {string} token - JWT token iz 'Authorization' hedera ili query parametra
- * @returns {object} Dekodirani payload tokena ako je validan
+ * @returns {Promise<object>} Dekodirani payload tokena ako je validan
  * @throws {Error} Ako token nije validan
  */
 export function verifyToken(token) {
   if (!token) {
-    throw new Error('Token is missing.');
+    // Odmah odbijamo ako tokena nema
+    return Promise.reject(new Error('Token is missing.'));
   }
 
-  try {
-    const decoded = jwt.verify(token, CLOCKIFY_PUBLIC_KEY, {
-      algorithms: ['RS256'],
-    });
+  // Pošto 'getKey' koristi callback, moramo celu verifikaciju da pretvorimo u Promise
+  return new Promise((resolve, reject) => {
+    jwt.verify(
+      token,
+      getKey, // Koristimo našu dinamičku funkciju umesto hardkodovanog ključa
+      {
+        algorithms: ['RS256'], // Važno je da algoritam ostane RS256
+      },
+      (err, decoded) => {
+        if (err) {
+          console.error("Token verification failed:", err.message);
+          return reject(new Error('Invalid or expired token.'));
+        }
 
-    // Proveravamo da li je token izdat od strane Clockify-a za add-on
-    if (decoded.iss !== 'clockify' || decoded.type !== 'addon') {
-      throw new Error('Invalid token issuer or type.');
-    }
-    
-    // U 'sub' claim-u se nalazi ključ vašeg addona iz manifest fajla.
-    // Ovde možete dodati i proveru za to ako želite dodatnu sigurnost:
-    // if (decoded.sub !== 'vas-addon-kljuc') {
-    //   throw new Error('Token subject does not match addon key.');
-    // }
+        // Proveravamo da li je token izdat od strane Clockify-a za add-on
+        if (decoded.iss !== 'clockify' || decoded.type !== 'addon') {
+          return reject(new Error('Invalid token issuer or type.'));
+        }
 
-    return decoded;
-
-  } catch (error) {
-    console.error("Token verification failed:", error.message);
-    throw new Error('Invalid or expired token.');
-  }
+        // Token je validan, vraćamo dekodirani payload
+        resolve(decoded);
+      }
+    );
+  });
 }
