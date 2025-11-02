@@ -1,8 +1,8 @@
-// repo-main/pages/api/reports.js
+// report.js with dynamic invoice title including the client's name
 
 import { PDFDocument, StandardFonts, rgb, PDFName, PDFString } from "pdf-lib";
 import { verifyToken } from '../../lib/auth';
-import { supabase } from '../../lib/supabaseClient'; 
+import { supabase } from '../../lib/supabaseClient'; // Uverite se da je ovaj import tačan
 import fs from 'fs';
 import path from 'path';
 
@@ -19,29 +19,37 @@ function drawText(page, text, x, y, options = {}) { page.drawText(String(text), 
 
 
 export default async function handler(req, res) {
-    if (req.method !== "POST") {
-        res.setHeader("Allow", ["POST"]);
-        return res.status(405).end(`Method ${req.method} Not Allowed`);
-    }
+    if (req.method !== "POST") {
+        res.setHeader("Allow", ["POST"]);
+        return res.status(405).end(`Method ${req.method} Not Allowed`);
+    }
 
-    try {
-        const authHeader = req.headers.authorization;
-        if (!authHeader || !authHeader.startsWith('Bearer ')) {
-            return res.status(401).json({ error: 'Authorization header missing or malformed' });
-        }
-        const token = authHeader.split(' ')[1];
-        const decodedToken = verifyToken(token);
-        const { workspaceId, reportsUrl, backendUrl } = decodedToken;
+    try {
+        const authHeader = req.headers.authorization;
+        if (!authHeader || !authHeader.startsWith('Bearer ')) {
+            return res.status(401).json({ error: 'Authorization header missing or malformed' });
+        }
+        const token = authHeader.split(' ')[1];
         
+        // ✨ =================== KLJUČNA IZMENA ZA FIX =================== ✨
+        //
+        // Dodali smo 'await' jer verifyToken sada vraća Promise (Hibridni Auth)
+        //
+        const decodedToken = await verifyToken(token);
+        //
+        // ✨ ============================================================= ✨
+        
+        const { workspaceId, reportsUrl, backendUrl } = decodedToken;
+        
+        const { start, end, USER_PAYPAL_LINK, billableFilter, projectFilter, clientFilter, clientName, clientAddress, taskFilter, descriptionFilter, withoutTask, withoutDescription, issueDate, dueDate, preview, columns: visibleColumns = { date: true, description: true, project: true, task: true } } = req.body;
+
         // =======================================================
-        // ✨ FINALNA LOGIKA ZA PROVERU I BROJANJE FREE TRIAL LIMITE
+        // LOGIKA ZA PROVERU I BROJANJE FREE TRIAL LIMITE
         // =======================================================
-        const { preview } = req.body;
-        
         if (!preview) {
             const DOWNLOAD_LIMIT = 3; 
 
-            // 1. Dohvatanje trenutnog brojača za dati Workspace (SELECT)
+            // 1. Dohvatanje trenutnog brojača (ovo je već bilo ispravno)
             const { data: installation, error: fetchError } = await supabase
                 .from('installations')
                 .select('pdf_downloads_count')
@@ -63,7 +71,7 @@ export default async function handler(req, res) {
                 });
             }
 
-            // 3. Povećanje brojača pozivanjem RPC funkcije
+            // 3. Povećanje brojača pozivanjem RPC funkcije (ovo je već bilo ispravno)
             const { error: rpcError } = await supabase.rpc('increment_pdf_download_count', {
                 p_workspace_id: workspaceId
             });
@@ -74,241 +82,238 @@ export default async function handler(req, res) {
             }
         }
         // =======================================================
-        // ✨ KRAJ LOGIKE ZA LIMIT
+        // KRAJ LOGIKE ZA LIMIT
         // =======================================================
-        
-        const { start, end, USER_PAYPAL_LINK, billableFilter, projectFilter, clientFilter, clientName, clientAddress, taskFilter, descriptionFilter, withoutTask, withoutDescription, issueDate, dueDate, columns: visibleColumns = { date: true, description: true, project: true, task: true } } = req.body;
 
-        const workspaceResp = await fetch(`${backendUrl}/v1/workspaces/${workspaceId}`, { headers: { "X-Addon-Token": token } });
-        if (!workspaceResp.ok) throw new Error(`Could not fetch workspace details. Status: ${workspaceResp.status}`);
-        const workspaceData = await workspaceResp.json();
-        const workspaceName = workspaceData.name || "My Workspace";
-        const logoUrl = workspaceData.imageUrl;
-        const durationFormat = workspaceData.durationFormat;
+        const workspaceResp = await fetch(`${backendUrl}/v1/workspaces/${workspaceId}`, { headers: { "X-Addon-Token": token } });
+        if (!workspaceResp.ok) throw new Error(`Could not fetch workspace details. Status: ${workspaceResp.status}`);
+        const workspaceData = await workspaceResp.json();
+        const workspaceName = workspaceData.name || "My Workspace";
+        const logoUrl = workspaceData.imageUrl;
+        const durationFormat = workspaceData.durationFormat;
 
-        const startDate = new Date(start);
-        startDate.setUTCHours(0, 0, 0, 0);
-        const endDate = new Date(end);
-        endDate.setUTCHours(23, 59, 59, 999);
+        const startDate = new Date(start);
+        startDate.setUTCHours(0, 0, 0, 0);
+        const endDate = new Date(end);
+        endDate.setUTCHours(23, 59, 59, 999);
 
-        const clockifyPayload = {
-            dateRangeStart: startDate.toISOString(),
-            dateRangeEnd: endDate.toISOString(),
-            page: 1, pageSize: 5000,
-            amountShown: "EARNED", exportType: "JSON",
-            detailedFilter: { sortColumn: "DATE", sortOrder: "ASCENDING" }
-        };
+        const clockifyPayload = {
+            dateRangeStart: startDate.toISOString(),
+            dateRangeEnd: endDate.toISOString(),
+            page: 1, pageSize: 5000,
+            amountShown: "EARNED", exportType: "JSON",
+            detailedFilter: { sortColumn: "DATE", sortOrder: "ASCENDING" }
+        };
 
-        if (billableFilter === "billable") { clockifyPayload.billable = true; }
-        else if (billableFilter === "nonbillable") { clockifyPayload.billable = false; }
+        if (billableFilter === "billable") { clockifyPayload.billable = true; }
+        else if (billableFilter === "nonbillable") { clockifyPayload.billable = false; }
 
-        if (projectFilter && projectFilter.length > 0) { clockifyPayload.projects = { ids: projectFilter, contains: "CONTAINS", status: "ALL" }; }
-        if (clientFilter && clientFilter !== "any") { clockifyPayload.clients = { ids: [clientFilter], contains: "CONTAINS", status: "ALL" }; }
+        if (projectFilter && projectFilter.length > 0) { clockifyPayload.projects = { ids: projectFilter, contains: "CONTAINS", status: "ALL" }; }
+        if (clientFilter && clientFilter !== "any") { clockifyPayload.clients = { ids: [clientFilter], contains: "CONTAINS", status: "ALL" }; }
 
-        if (!withoutTask && taskFilter && taskFilter.length > 0) {
-            clockifyPayload.tasks = { 
-                ids: taskFilter, 
-                contains: "CONTAINS", 
-                status: "ALL" 
-            };
-        }
+        if (!withoutTask && taskFilter && taskFilter.length > 0) {
+            clockifyPayload.tasks = { 
+                ids: taskFilter, 
+                contains: "CONTAINS", 
+                status: "ALL" 
+            };
+        }
 
-        if (withoutDescription) {
-            clockifyPayload.withoutDescription = true;
-        } else if (descriptionFilter && descriptionFilter.trim() !== '') {
-            clockifyPayload.description = descriptionFilter.trim();
-        }
+        if (withoutDescription) {
+            clockifyPayload.withoutDescription = true;
+        } else if (descriptionFilter && descriptionFilter.trim() !== '') {
+            clockifyPayload.description = descriptionFilter.trim();
+        }
 
-        const reportApiUrl = `${reportsUrl}/v1/workspaces/${workspaceId}/reports/detailed`;
-        const resp = await fetch(reportApiUrl, {
-            method: "POST",
-            headers: { "X-Addon-Token": token, "Content-Type": "application/json" },
-            body: JSON.stringify(clockifyPayload)
-        });
+        const reportApiUrl = `${reportsUrl}/v1/workspaces/${workspaceId}/reports/detailed`;
+        const resp = await fetch(reportApiUrl, {
+            method: "POST",
+            headers: { "X-Addon-Token": token, "Content-Type": "application/json" },
+            body: JSON.stringify(clockifyPayload)
+        });
 
-        if (!resp.ok) {
-            const errorText = await resp.text();
-            throw new Error(`Clockify API error with status ${resp.status}: ${errorText}`);
-        }
+        if (!resp.ok) {
+            const errorText = await resp.text();
+            throw new Error(`Clockify API error with status ${resp.status}: ${errorText}`);
+        }
 
-        let json = await resp.json();
-        
-        if (withoutTask && json.timeentries && Array.isArray(json.timeentries)) {
-            json.timeentries = json.timeentries.filter(entry => 
-                !entry.taskId || entry.taskId === ""
-            );
-        }
-        
-        if (preview) { return res.status(200).json({ reportData: json, workspaceSettings: { durationFormat } }); }
-        
-        const entries = collectEntries(json);
-        const rows = entries.map((e) => ({
-            date: formatDateDDMMYYYY(e.timeInterval?.start),
-            description: e.description || "",
-            project: e.projectName || "—",
-            task: e.taskName || "",
-            amounts: getAmountsMapFromEntry(e),
-            amount: formatAmountsMap(getAmountsMapFromEntry(e)),
-            durationSeconds: parseISODurationToSeconds(e.timeInterval?.duration),
-            quantity: formatDuration(parseISODurationToSeconds(e.timeInterval?.duration), durationFormat),
-            unitPrice: e.rate != null ? (e.rate / 100).toFixed(2) : "",
-        }));
+        let json = await resp.json();
+        
+        if (withoutTask && json.timeentries && Array.isArray(json.timeentries)) {
+            json.timeentries = json.timeentries.filter(entry => 
+                !entry.taskId || entry.taskId === ""
+            );
+        }
+        
+        if (preview) { return res.status(200).json({ reportData: json, workspaceSettings: { durationFormat } }); }
+        
+        const entries = collectEntries(json);
+        const rows = entries.map((e) => ({
+            date: formatDateDDMMYYYY(e.timeInterval?.start),
+            description: e.description || "",
+            project: e.projectName || "—",
+            task: e.taskName || "",
+            amounts: getAmountsMapFromEntry(e),
+            amount: formatAmountsMap(getAmountsMapFromEntry(e)),
+            durationSeconds: parseISODurationToSeconds(e.timeInterval?.duration),
+            quantity: formatDuration(parseISODurationToSeconds(e.timeInterval?.duration), durationFormat),
+            unitPrice: e.rate != null ? (e.rate / 100).toFixed(2) : "",
+        }));
 
-        const pdfDoc = await PDFDocument.create();
-        const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
-        const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
-        const PAGE_WIDTH = 595, PAGE_HEIGHT = 842, MARGIN = 50;
-        const usableWidth = PAGE_WIDTH - MARGIN * 2;
-        let logoImage = null;
-        if (logoUrl) { try { const logoImageBytes = await fetch(logoUrl).then((res) => res.arrayBuffer()); if (logoUrl.endsWith('.png')) { logoImage = await pdfDoc.embedPng(logoImageBytes); } else if (logoUrl.endsWith('.jpg') || logoUrl.endsWith('.jpeg')) { logoImage = await pdfDoc.embedJpg(logoImageBytes); } } catch (e) { console.warn("Could not fetch or embed workspace logo:", e); } }
+        const pdfDoc = await PDFDocument.create();
+        const font = await pdfDoc.embedFont(StandardFonts.Helvetica);
+        const fontBold = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+        const PAGE_WIDTH = 595, PAGE_HEIGHT = 842, MARGIN = 50;
+        const usableWidth = PAGE_WIDTH - MARGIN * 2;
+        let logoImage = null;
+        if (logoUrl) { try { const logoImageBytes = await fetch(logoUrl).then((res) => res.arrayBuffer()); if (logoUrl.endsWith('.png')) { logoImage = await pdfDoc.embedPng(logoImageBytes); } else if (logoUrl.endsWith('.jpg') || logoUrl.endsWith('.jpeg')) { logoImage = await pdfDoc.embedJpg(logoImageBytes); } } catch (e) { console.warn("Could not fetch or embed workspace logo:", e); } }
 
-        const getWrappedLines = (text, f, size, maxWidth) => { const words = String(text).split(' '); const lines = []; let currentLine = words[0] || ''; for (let i = 1; i < words.length; i++) { const word = words[i]; const width = f.widthOfTextAtSize(currentLine + ' ' + word, size); if (width < maxWidth) { currentLine += ' ' + word; } else { lines.push(currentLine); currentLine = word; } } lines.push(currentLine); return lines; };
+        const getWrappedLines = (text, f, size, maxWidth) => { const words = String(text).split(' '); const lines = []; let currentLine = words[0] || ''; for (let i = 1; i < words.length; i++) { const word = words[i]; const width = f.widthOfTextAtSize(currentLine + ' ' + word, size); if (width < maxWidth) { currentLine += ' ' + word; } else { lines.push(currentLine); currentLine = word; } } lines.push(currentLine); return lines; };
 
-        const allPossibleColumns = [
-            { key: 'date', label: 'Date', baseWidth: 55 },
-            { key: 'description', label: 'Description', baseWidth: 100 },
-            { key: 'project', label: 'Project', baseWidth: 100 },
-            { key: 'task', label: 'Task', baseWidth: 70 },
-        ];
-        const fixedRightColumns = [
-            { key: 'unitPrice', label: 'Unit Price', baseWidth: 55 },
-            { key: 'quantity', label: 'Quantity', baseWidth: 55 },
-            { key: 'amount', label: 'Amount', baseWidth: 60 },
-        ];
-        const activeDynamicCols = allPossibleColumns.filter(c => visibleColumns[c.key]);
-        const removedDynamicCols = allPossibleColumns.filter(c => !visibleColumns[c.key]);
-        const removedWidth = removedDynamicCols.reduce((sum, c) => sum + c.baseWidth, 0);
-        const extraWidthPerActiveCol = activeDynamicCols.length > 0 ? removedWidth / activeDynamicCols.length : 0;
-        const finalColumns = [
-            ...activeDynamicCols.map(c => ({...c, width: c.baseWidth + extraWidthPerActiveCol })),
-            ...fixedRightColumns.map(c => ({...c, width: c.baseWidth }))
-        ];
+        const allPossibleColumns = [
+            { key: 'date', label: 'Date', baseWidth: 55 },
+            { key: 'description', label: 'Description', baseWidth: 100 },
+            { key: 'project', label: 'Project', baseWidth: 100 },
+            { key: 'task', label: 'Task', baseWidth: 70 },
+        ];
+        const fixedRightColumns = [
+            { key: 'unitPrice', label: 'Unit Price', baseWidth: 55 },
+            { key: 'quantity', label: 'Quantity', baseWidth: 55 },
+            { key: 'amount', label: 'Amount', baseWidth: 60 },
+        ];
+        const activeDynamicCols = allPossibleColumns.filter(c => visibleColumns[c.key]);
+        const removedDynamicCols = allPossibleColumns.filter(c => !visibleColumns[c.key]);
+        const removedWidth = removedDynamicCols.reduce((sum, c) => sum + c.baseWidth, 0);
+        const extraWidthPerActiveCol = activeDynamicCols.length > 0 ? removedWidth / activeDynamicCols.length : 0;
+        const finalColumns = [
+            ...activeDynamicCols.map(c => ({...c, width: c.baseWidth + extraWidthPerActiveCol })),
+            ...fixedRightColumns.map(c => ({...c, width: c.baseWidth }))
+        ];
 
-        const drawTableHeader = (page, yPos, columns) => {
-            page.drawRectangle({ x: MARGIN, y: yPos - 5, width: usableWidth, height: 25, color: rgb(0.92, 0.92, 0.92) });
-            let currentX = MARGIN;
-            for (const col of columns) { drawText(page, col.label, currentX + 5, yPos, { font: fontBold }); currentX += col.width; }
-            return yPos - 30;
-        };
+        const drawTableHeader = (page, yPos, columns) => {
+            page.drawRectangle({ x: MARGIN, y: yPos - 5, width: usableWidth, height: 25, color: rgb(0.92, 0.92, 0.92) });
+            let currentX = MARGIN;
+            for (const col of columns) { drawText(page, col.label, currentX + 5, yPos, { font: fontBold }); currentX += col.width; }
+            return yPos - 30;
+        };
 
-        let page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
-        let y = PAGE_HEIGHT - MARGIN;
+        let page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]);
+        let y = PAGE_HEIGHT - MARGIN;
 
-        if (logoImage) { const maxWidth = 120, maxHeight = 50; const logoDims = logoImage.scaleToFit(maxWidth, maxHeight); page.drawImage(logoImage, { x: PAGE_WIDTH - MARGIN - logoDims.width, y: y - logoDims.height, width: logoDims.width, height: logoDims.height }); }
-        const finalIssueDate = issueDate ? new Date(issueDate) : new Date();
-        const dueDateString = dueDate ? formatDateDDMMYYYY(new Date(dueDate)) : "upon receipt";
-        drawText(page, "Issue date:", MARGIN, y - 20, { font: fontBold, size: 10 });
-        drawText(page, formatDateDDMMYYYY(finalIssueDate), MARGIN + 70, y - 20, { font, size: 10 });
-        drawText(page, "Due date:", MARGIN, y - 35, { font: fontBold, size: 10 });
-        drawText(page, dueDateString, MARGIN + 70, y - 35, { font, size: 10 });
-        y -= 100;
-        drawText(page, "Bill From", MARGIN, y, { font: fontBold, size: 11 });
-        drawText(page, workspaceName, MARGIN, y - 15, { font, size: 10 });
-        drawText(page, "Bill To", PAGE_WIDTH / 2 + 50, y, { font: fontBold, size: 11 });
-        drawText(page, clientName || 'N/A', PAGE_WIDTH / 2 + 50, y - 15, { font, size: 10 });
+        if (logoImage) { const maxWidth = 120, maxHeight = 50; const logoDims = logoImage.scaleToFit(maxWidth, maxHeight); page.drawImage(logoImage, { x: PAGE_WIDTH - MARGIN - logoDims.width, y: y - logoDims.height, width: logoDims.width, height: logoDims.height }); }
+        const finalIssueDate = issueDate ? new Date(issueDate) : new Date();
+        const dueDateString = dueDate ? formatDateDDMMYYYY(new Date(dueDate)) : "upon receipt";
+        drawText(page, "Issue date:", MARGIN, y - 20, { font: fontBold, size: 10 });
+        drawText(page, formatDateDDMMYYYY(finalIssueDate), MARGIN + 70, y - 20, { font, size: 10 });
+        drawText(page, "Due date:", MARGIN, y - 35, { font: fontBold, size: 10 });
+        drawText(page, dueDateString, MARGIN + 70, y - 35, { font, size: 10 });
+        y -= 100;
+        drawText(page, "Bill From", MARGIN, y, { font: fontBold, size: 11 });
+        drawText(page, workspaceName, MARGIN, y - 15, { font, size: 10 });
+        drawText(page, "Bill To", PAGE_WIDTH / 2 + 50, y, { font: fontBold, size: 11 });
+        drawText(page, clientName || 'N/A', PAGE_WIDTH / 2 + 50, y - 15, { font, size: 10 });
 
-        let addressYOffset = 0;
-        if (clientAddress && clientAddress.trim() !== '') {
-            const addressLines = clientAddress.split('\n');
-            let currentY = y - 30;
-            for (const line of addressLines) {
-                if (line.trim() !== '') { drawText(page, line.trim(), PAGE_WIDTH / 2 + 50, currentY, { font, size: 10 }); currentY -= 12; }
-            }
-            addressYOffset = (addressLines.length * 12);
-        }
-        y -= 60 + addressYOffset;
-        
-        const subjectText = clientName ? `Invoice for ${clientName}` : "Invoice for Time Report";
-        
-        const subjectWidth = fontBold.widthOfTextAtSize(subjectText, 14);
-        
-        drawText(page, subjectText, (PAGE_WIDTH - subjectWidth) / 2, y, { font: fontBold, size: 14 });
-        y -= 40;
-        
-        y = drawTableHeader(page, y, finalColumns);
+        let addressYOffset = 0;
+        if (clientAddress && clientAddress.trim() !== '') {
+            const addressLines = clientAddress.split('\n');
+            let currentY = y - 30;
+            for (const line of addressLines) {
+                if (line.trim() !== '') { drawText(page, line.trim(), PAGE_WIDTH / 2 + 50, currentY, { font, size: 10 }); currentY -= 12; }
+            }
+            addressYOffset = (addressLines.length * 12);
+        }
+        y -= 60 + addressYOffset;
+        
+        const subjectText = clientName ? `Invoice for ${clientName}` : "Invoice for Time Report";
+        
+        const subjectWidth = fontBold.widthOfTextAtSize(subjectText, 14);
+        
+        drawText(page, subjectText, (PAGE_WIDTH - subjectWidth) / 2, y, { font: fontBold, size: 14 });
+        y -= 40;
+        
+        y = drawTableHeader(page, y, finalColumns);
 
-        const BODY_FONT_SIZE = 9, LINE_HEIGHT = 11, V_PADDING = 9;
-        for (const row of rows) {
-            let maxLines = 1;
-            const rowLineData = {};
-            for (const col of finalColumns) {
-                const text = row[col.key] || '';
-                const lines = getWrappedLines(text, font, BODY_FONT_SIZE, col.width - 10);
-                rowLineData[col.key] = lines;
-                if (lines.length > maxLines) maxLines = lines.length;
-            }
-            const rowHeight = (maxLines * LINE_HEIGHT) + (2 * V_PADDING);
-            if (y - rowHeight < MARGIN) { page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]); y = PAGE_HEIGHT - MARGIN; y = drawTableHeader(page, y, finalColumns); }
-            let currentX = MARGIN;
-            const textY = y - V_PADDING - (LINE_HEIGHT / 2);
-            for (const col of finalColumns) {
-                const lines = rowLineData[col.key] || [''];
-                lines.forEach((line, j) => { drawText(page, line, currentX + 5, textY - (j * LINE_HEIGHT), { font, size: BODY_FONT_SIZE, maxWidth: col.width - 10 }); });
-                currentX += col.width;
-            }
-            y -= rowHeight;
-            page.drawLine({ start: { x: MARGIN, y: y }, end: { x: MARGIN + usableWidth, y: y }, thickness: 0.5, color: rgb(0.85, 0.85, 0.85) });
-        }
+        const BODY_FONT_SIZE = 9, LINE_HEIGHT = 11, V_PADDING = 9;
+        for (const row of rows) {
+            let maxLines = 1;
+            const rowLineData = {};
+            for (const col of finalColumns) {
+                const text = row[col.key] || '';
+                const lines = getWrappedLines(text, font, BODY_FONT_SIZE, col.width - 10);
+                rowLineData[col.key] = lines;
+                if (lines.length > maxLines) maxLines = lines.length;
+            }
+            const rowHeight = (maxLines * LINE_HEIGHT) + (2 * V_PADDING);
+            if (y - rowHeight < MARGIN) { page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]); y = PAGE_HEIGHT - MARGIN; y = drawTableHeader(page, y, finalColumns); }
+            let currentX = MARGIN;
+            const textY = y - V_PADDING - (LINE_HEIGHT / 2);
+            for (const col of finalColumns) {
+                const lines = rowLineData[col.key] || [''];
+                lines.forEach((line, j) => { drawText(page, line, currentX + 5, textY - (j * LINE_HEIGHT), { font, size: BODY_FONT_SIZE, maxWidth: col.width - 10 }); });
+                currentX += col.width;
+            }
+            y -= rowHeight;
+            page.drawLine({ start: { x: MARGIN, y: y }, end: { x: MARGIN + usableWidth, y: y }, thickness: 0.5, color: rgb(0.85, 0.85, 0.85) });
+        }
 
-        const totalsMap = {}; let totalSeconds = 0;
-        for (const r of rows) { totalSeconds += r.durationSeconds || 0; for (const cur of Object.keys(r.amounts || {})) { totalsMap[cur] = (totalsMap[cur] || 0) + r.amounts[cur]; } }
-        const totalsStr = formatAmountsMap(totalsMap); const totalDurationStr = formatDuration(totalSeconds, durationFormat);
-        const totalsBarHeight = 60;
-        const topMarginForTotals = 20;
-        let totalsY = y - totalsBarHeight - topMarginForTotals;
-        if (totalsY < MARGIN) { page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]); y = PAGE_HEIGHT - MARGIN; totalsY = y - totalsBarHeight; }
-        page.drawRectangle({ x: MARGIN, y: totalsY, width: usableWidth, height: totalsBarHeight, color: rgb(0.92, 0.92, 0.92) });
-        drawText(page, `Total Amount: ${totalsStr}`, MARGIN + 10, totalsY + 35, { size: 11, font: fontBold });
-        drawText(page, `Total Duration: ${totalDurationStr}`, MARGIN + 10, totalsY + 15, { size: 11, font });
+        const totalsMap = {}; let totalSeconds = 0;
+        for (const r of rows) { totalSeconds += r.durationSeconds || 0; for (const cur of Object.keys(r.amounts || {})) { totalsMap[cur] = (totalsMap[cur] || 0) + r.amounts[cur]; } }
+        const totalsStr = formatAmountsMap(totalsMap); const totalDurationStr = formatDuration(totalSeconds, durationFormat);
+        const totalsBarHeight = 60;
+        const topMarginForTotals = 20;
+        let totalsY = y - totalsBarHeight - topMarginForTotals;
+        if (totalsY < MARGIN) { page = pdfDoc.addPage([PAGE_WIDTH, PAGE_HEIGHT]); y = PAGE_HEIGHT - MARGIN; totalsY = y - totalsBarHeight; }
+        page.drawRectangle({ x: MARGIN, y: totalsY, width: usableWidth, height: totalsBarHeight, color: rgb(0.92, 0.92, 0.92) });
+        drawText(page, `Total Amount: ${totalsStr}`, MARGIN + 10, totalsY + 35, { size: 11, font: fontBold });
+        drawText(page, `Total Duration: ${totalDurationStr}`, MARGIN + 10, totalsY + 15, { size: 11, font });
 
-        if (USER_PAYPAL_LINK) {
-            const firstCur = Object.keys(totalsMap || {})[0];
-            const firstAmount = firstCur ? (totalsMap[firstCur] || 0).toFixed(2) : "0.00";
-            const paypalUrlBase = sanitizePaypalLink(USER_PAYPAL_LINK);
-            const paypalUrl = firstCur ? `${paypalUrlBase}/${firstAmount}${firstCur}` : paypalUrlBase;
-            try {
-                const imagePath = path.resolve('./lib/paypal-button.png');
-                const paypalButtonBytes = fs.readFileSync(imagePath);
-                const paypalImage = await pdfDoc.embedPng(paypalButtonBytes);
-                const btnH = 25, btnW = (btnH / paypalImage.height) * paypalImage.width;
-                const rightPadding = 15, btnX = PAGE_WIDTH - MARGIN - btnW - rightPadding, btnY = totalsY + (totalsBarHeight / 2) - (btnH / 2);
-                page.drawImage(paypalImage, { x: btnX, y: btnY, width: btnW, height: btnH });
-                addLinkAnnotation(page, btnX, btnY, btnW, btnH, paypalUrl);
-            } catch (err) {
-                console.warn("Could not embed PayPal PNG from file, falling back to default button.", err);
-                const btnW = 140, btnH = 28, rightPadding = 15, btnX = PAGE_WIDTH - MARGIN - btnW - rightPadding, btnY = totalsY + (totalsBarHeight / 2) - (btnH / 2);
-                page.drawRectangle({ x: btnX, y: btnY, width: btnW, height: btnH, color: rgb(0.1, 0.53, 0.82), borderRadius: 5 });
-                const textRegular = "Pay with ", textBold = "PayPal", fontSize = 12, textColor = rgb(1, 1, 1);
-                const regularWidth = font.widthOfTextAtSize(textRegular, fontSize), boldWidth = fontBold.widthOfTextAtSize(textBold, fontSize), totalTextWidth = regularWidth + boldWidth;
-                const textStartX = btnX + (btnW - totalTextWidth) / 2, textBaselineY = btnY + (btnH / 2) - (fontSize / 2) + 2;
-                drawText(page, textRegular, textStartX, textBaselineY, { font: font, size: fontSize, color: textColor });
-                drawText(page, textBold, textStartX + regularWidth, textBaselineY, { font: fontBold, size: fontSize, color: textColor });
-                addLinkAnnotation(page, btnX, btnY, btnW, btnH, paypalUrl);
-            }
-        }
+        if (USER_PAYPAL_LINK) {
+            const firstCur = Object.keys(totalsMap || {})[0];
+            const firstAmount = firstCur ? (totalsMap[firstCur] || 0).toFixed(2) : "0.00";
+            const paypalUrlBase = sanitizePaypalLink(USER_PAYPAL_LINK);
+            const paypalUrl = firstCur ? `${paypalUrlBase}/${firstAmount}${firstCur}` : paypalUrlBase;
+            try {
+                const imagePath = path.resolve('./lib/paypal-button.png');
+                const paypalButtonBytes = fs.readFileSync(imagePath);
+                const paypalImage = await pdfDoc.embedPng(paypalButtonBytes);
+                const btnH = 25, btnW = (btnH / paypalImage.height) * paypalImage.width;
+                const rightPadding = 15, btnX = PAGE_WIDTH - MARGIN - btnW - rightPadding, btnY = totalsY + (totalsBarHeight / 2) - (btnH / 2);
+                page.drawImage(paypalImage, { x: btnX, y: btnY, width: btnW, height: btnH });
+                addLinkAnnotation(page, btnX, btnY, btnW, btnH, paypalUrl);
+            } catch (err) {
+                console.warn("Could not embed PayPal PNG from file, falling back to default button.", err);
+                const btnW = 140, btnH = 28, rightPadding = 15, btnX = PAGE_WIDTH - MARGIN - btnW - rightPadding, btnY = totalsY + (totalsBarHeight / 2) - (btnH / 2);
+                page.drawRectangle({ x: btnX, y: btnY, width: btnW, height: btnH, color: rgb(0.1, 0.53, 0.82), borderRadius: 5 });
+                const textRegular = "Pay with ", textBold = "PayPal", fontSize = 12, textColor = rgb(1, 1, 1);
+                const regularWidth = font.widthOfTextAtSize(textRegular, fontSize), boldWidth = fontBold.widthOfTextAtSize(textBold, fontSize), totalTextWidth = regularWidth + boldWidth;
+                const textStartX = btnX + (btnW - totalTextWidth) / 2, textBaselineY = btnY + (btnH / 2) - (fontSize / 2) + 2;
+                drawText(page, textRegular, textStartX, textBaselineY, { font: font, size: fontSize, color: textColor });
+                drawText(page, textBold, textStartX + regularWidth, textBaselineY, { font: fontBold, size: fontSize, color: textColor });
+                addLinkAnnotation(page, btnX, btnY, btnW, btnH, paypalUrl);
+            }
+        }
 
-        const pdfBytes = await pdfDoc.save();
-        
-        const safeClientName = clientName ? clientName.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_-]/g, '') : 'Report';
-        
-        const filename = `${safeClientName}_${start}_${end}.pdf`;
-        
-        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-        res.setHeader('Pragma', 'no-cache');
-        res.setHeader('Expires', '0');
-        
-        res.setHeader("Content-Type", "application/pdf");
-        res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
-        return res.send(Buffer.from(pdfBytes));
+        const pdfBytes = await pdfDoc.save();
+        
+        const safeClientName = clientName ? clientName.replace(/\s+/g, '_').replace(/[^a-zA-Z0-9_-]/g, '') : 'Report';
+        
+        const filename = `${safeClientName}_${start}_${end}.pdf`;
+        
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+        
+        res.setHeader("Content-Type", "application/pdf");
+        res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+        return res.send(Buffer.from(pdfBytes));
 
-    } catch (err) {
-        console.error("API /reports error:", err.message);
-        
-        if (err.message.includes("401") || err.message.toLowerCase().includes("token")) {
-            return res.status(401).json({ error: "Your session has expired. Please refresh the page to continue." });
-        }
-        
-        res.status(500).json({ error: "An unexpected error occurred while generating the report. Please try again." });
-    }
+    } catch (err) {
+        console.error("API /reports error:", err.message);
+        
+        if (err.message.includes("401") || err.message.toLowerCase().includes("token") || err.message.includes("Invalid or expired token")) {
+            return res.status(401).json({ error: "Your session has expired or the token is invalid. Please refresh the page to continue." });
+        }
+        
+        res.status(500).json({ error: "An unexpected error occurred while generating the report. Please try again." });
+    }
 }
-
