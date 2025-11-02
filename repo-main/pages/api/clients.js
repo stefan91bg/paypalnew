@@ -7,23 +7,22 @@ export default async function handler(req, res) {
   }
 
   try {
-    // 1. Pročitaj token iz Authorization hedera
     const authHeader = req.headers.authorization;
     if (!authHeader || !authHeader.startsWith('Bearer ')) {
       return res.status(401).json({ error: 'Authorization header missing or malformed' });
     }
     const token = authHeader.split(' ')[1];
 
-    // 2. Verifikuj token
-    const decodedToken = verifyToken(token);
+    // ✨ KLJUČNA IZMENA: Dodali smo 'await' jer je verifyToken sada asinhrona
+    const decodedToken = await verifyToken(token);
     
-    // 3. Koristi podatke iz tokena za API poziv
+    // Odavde je sve isto kao tvoj kod, koji je već bio dobar:
     const { workspaceId, backendUrl } = decodedToken;
     
     const url = `${backendUrl}/v1/workspaces/${workspaceId}/clients?archived=false&page-size=1000&sort-column=NAME&sort-order=ASCENDING`;
     
     const response = await fetch(url, {
-      headers: { 'X-Addon-Token': token }, // Koristimo token za komunikaciju sa Clockify-em
+      headers: { 'X-Addon-Token': token }, 
     });
 
     if (!response.ok) {
@@ -35,7 +34,7 @@ export default async function handler(req, res) {
 
   } catch (error) {
     console.error('Failed to fetch clients:', error.message);
-    res.status(401).json({ error: error.message }); // 401 Unauthorized ako token nije validan
+    // Greška iz verifyToken (npr. "Invalid token") će takođe biti uhvaćena ovde
+    res.status(401).json({ error: error.message }); 
   }
 }
-
