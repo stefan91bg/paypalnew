@@ -1,12 +1,12 @@
-// report.js with dynamic invoice title including the client's name
+
 
 import { PDFDocument, StandardFonts, rgb, PDFName, PDFString } from "pdf-lib";
 import { verifyToken } from '../../lib/auth';
-import { supabase } from '../../lib/supabaseClient'; // Uverite se da je ovaj import tačan
+import { supabase } from '../../lib/supabaseClient'; 
 import fs from 'fs';
 import path from 'path';
 
-// Helper funkcije (ostaju iste)
+
 function addLinkAnnotation(page, x, y, width, height, url) { const ctx = page.node?.context || page.doc.context; const annotation = ctx.obj({ Type: PDFName.of("Annot"), Subtype: PDFName.of("Link"), Rect: ctx.obj([x, y, x + width, y + height]), Border: ctx.obj([0, 0, 0]), A: ctx.obj({ Type: PDFName.of("Action"), S: PDFName.of("URI"), URI: PDFString.of(url) }) }); let annots = page.node.lookup(PDFName.of("Annots")); if (!annots) { annots = ctx.obj([]); page.node.set(PDFName.of("Annots"), annots); } annots.push(annotation); }
 function sanitizePaypalLink(link) { if (!link || typeof link !== "string") throw new Error("Invalid PayPal link"); let l = link.trim().replace(/^https?:\/\//i, "").replace(/^www\./i, "").replace(/\/$/, ""); const regex = /^paypal\.me\/[A-Za-z0-9._-]+(\/?[0-9.,]*)?$/; if (!regex.test(l) || /[<>{}()]/.test(l)) throw new Error("Invalid PayPal link format"); return "https://" + l.replace(/^\/+/, ""); }
 function collectEntries(node, acc = []) { if (!node || typeof node !== "object") return acc; if (Array.isArray(node.entries)) acc.push(...node.entries); if (Array.isArray(node.timeentries)) acc.push(...node.timeentries); for (const v of Object.values(node)) { if (Array.isArray(v)) v.forEach((child) => collectEntries(child, acc)); else if (typeof v === "object") collectEntries(v, acc); } return acc; }
@@ -31,25 +31,19 @@ export default async function handler(req, res) {
         }
         const token = authHeader.split(' ')[1];
         
-        // ✨ =================== KLJUČNA IZMENA ZA FIX =================== ✨
-        //
-        // Dodali smo 'await' jer verifyToken sada vraća Promise (Hibridni Auth)
-        //
+       
         const decodedToken = await verifyToken(token);
-        //
-        // ✨ ============================================================= ✨
+      
         
         const { workspaceId, reportsUrl, backendUrl } = decodedToken;
         
         const { start, end, USER_PAYPAL_LINK, billableFilter, projectFilter, clientFilter, clientName, clientAddress, taskFilter, descriptionFilter, withoutTask, withoutDescription, issueDate, dueDate, preview, columns: visibleColumns = { date: true, description: true, project: true, task: true } } = req.body;
 
-        // =======================================================
-        // LOGIKA ZA PROVERU I BROJANJE FREE TRIAL LIMITE
-        // =======================================================
+   
         if (!preview) {
             const DOWNLOAD_LIMIT = 3; 
 
-            // 1. Dohvatanje trenutnog brojača (ovo je već bilo ispravno)
+          
             const { data: installation, error: fetchError } = await supabase
                 .from('installations')
                 .select('pdf_downloads_count')
@@ -63,7 +57,7 @@ export default async function handler(req, res) {
 
             const currentCount = installation.pdf_downloads_count || 0;
 
-            // 2. Provera da li je limit dostignut
+            
             if (currentCount >= DOWNLOAD_LIMIT) {
                 return res.status(403).json({ 
                     error: 'Trial limit reached', 
@@ -71,7 +65,7 @@ export default async function handler(req, res) {
                 });
             }
 
-            // 3. Povećanje brojača pozivanjem RPC funkcije (ovo je već bilo ispravno)
+            
             const { error: rpcError } = await supabase.rpc('increment_pdf_download_count', {
                 p_workspace_id: workspaceId
             });
@@ -81,9 +75,7 @@ export default async function handler(req, res) {
                 return res.status(500).json({ error: 'Database update failed. Cannot complete download.' });
             }
         }
-        // =======================================================
-        // KRAJ LOGIKE ZA LIMIT
-        // =======================================================
+        
 
         const workspaceResp = await fetch(`${backendUrl}/v1/workspaces/${workspaceId}`, { headers: { "X-Addon-Token": token } });
         if (!workspaceResp.ok) throw new Error(`Could not fetch workspace details. Status: ${workspaceResp.status}`);
