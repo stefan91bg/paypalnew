@@ -3,6 +3,7 @@
   "name": "PayPal Report Link Free Trial",
   "description": "Generates PDF reports from Clockify time entries with a PayPal.me link.",
   "baseUrl": "https://paypalnew-two.vercel.app",
+  "iconPath": "/sidebar.jpeg",
   "minimalSubscriptionPlan": "FREE",
   "lifecycle": [
     {
