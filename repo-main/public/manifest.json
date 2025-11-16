@@ -16,7 +16,7 @@
       "label": "PayPal Reports",
       "path": "/",
       "accessLevel": "ADMINS",
-      "iconPath": "/iconnn.png"
+      "iconPath": "/ico.png"
     }
   ],
   "scopes": [
