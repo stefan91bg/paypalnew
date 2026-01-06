@@ -49,7 +49,7 @@ export default async function handler(req, res) {
             if (currentCount >= DOWNLOAD_LIMIT) {
                 return res.status(403).json({ 
                     error: 'Trial limit reached', 
-                    message: `You hit 3 PDF downloads limit, please subscribe to the <a href="https://clockify-addons.com/report-to-pdf-addon" target="_blank" style="color: #03a9f4; text-decoration: underline; font-weight: bold;">paid version</a>.` 
+                    message: `You hit 3 PDF downloads limit, please subscribe to the <a href="https://marketplace.cake.com/addons/aaa1ba6b-5b9b-4750-8af1-bebf26773728" target="_blank" style="color: #03a9f4; text-decoration: underline; font-weight: bold;">paid version</a>.` 
                 });
             }
 
