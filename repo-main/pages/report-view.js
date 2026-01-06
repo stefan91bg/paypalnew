@@ -110,6 +110,7 @@ export default function ReportView() {
     const [isDownloading, setIsDownloading] = useState(false);
     const [pdfColumns, setPdfColumns] = useState({ date: true, description: true, project: true, task: true });
     const [isLimitReached, setIsLimitReached] = useState(false);
+    const [limitMessage, setLimitMessage] = useState("");
     const { start, end, status, paypal, clientId, clientName, clientAddress, issueDate, dueDate, auth_token } = router.query;
 
     useEffect(() => { if (selectedTasks.length > 0) setWithoutTask(false) }, [selectedTasks]);
@@ -212,7 +213,7 @@ export default function ReportView() {
             if (resp.status === 403) {
                 const errorData = await resp.json();
                 setIsLimitReached(true);
-                alert(errorData.message || "You hit 3 PDF downloads limit, please subscribe to the payed version.");
+                setLimitMessage(errorData.message || "You hit 3 PDF downloads limit, please subscribe to the paid version.");
                 return;
             }
 
@@ -326,9 +327,10 @@ export default function ReportView() {
                         {isDownloading ? 'Generating...' : (isLimitReached ? 'Limit Reached' : 'Download PDF with PayPal Link')}
                     </button>
                     {isLimitReached && (
-                        <p className="limit-message">
-                            You hit 3 PDF downloads limit, please subscribe to the payed version.
-                        </p>
+                        <p 
+                            className="limit-message"
+                            dangerouslySetInnerHTML={{ __html: limitMessage }}
+                        />
                     )}
                 </div>
             </div>
